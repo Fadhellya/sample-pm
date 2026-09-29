@@ -1,0 +1,402 @@
+OpenShift PM Health Check - 2026-09-29 10:30:35 WIB
+Cluster API : https://api.ocp4-dc.virtus.corp:6443
+User        : system:admin
+
+==================== 01 Cluster Version ====================
+
+$ oc get clusterversion
+NAME      VERSION   AVAILABLE   PROGRESSING   SINCE   STATUS
+version   4.20.36   True        False         17d     Cluster version is 4.20.36
+
+$ oc get clusterversion version -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}: {.message}{"\n"}{end}' | grep -E '^(Failing|Progressing):' | grep -v 'Cluster version is'
+[PASS] [CRITICAL] ClusterVersion Failing / update macet
+
+$ oc adm upgrade 2>&1 | head -15
+Cluster version is 4.20.36
+
+Upstream is unset, so the cluster will use an appropriate default.
+Channel: stable-4.20 (available channels: candidate-4.20, candidate-4.21, candidate-4.22, eus-4.20, eus-4.22, fast-4.20, fast-4.21, fast-4.22, stable-4.20, stable-4.21, stable-4.22)
+
+Recommended updates:
+
+  VERSION     IMAGE
+  4.20.38     quay.io/openshift-release-dev/ocp-release@sha256:3f0d4394db6d0248681f0cb1ca1f724d3a9030cd8fe39d24d9a6b6bd1e08c410
+  4.20.37     quay.io/openshift-release-dev/ocp-release@sha256:d8d5978e31ff54deb3e0b46d881aba8df4fcceaa9299b947ec38a5e9205834a3
+
+==================== 02 ClusterOperators ====================
+
+$ oc get co --no-headers | awk '$3!="True"||$4!="False"||$5!="False"'
+[PASS] [CRITICAL] ClusterOperator tidak Available / Degraded / Progressing
+
+==================== 03 Nodes & MCP ====================
+
+$ oc get nodes -o wide
+NAME                           STATUS   ROLES                         AGE    VERSION    INTERNAL-IP    EXTERNAL-IP   OS-IMAGE                                                KERNEL-VERSION                  CONTAINER-RUNTIME
+master-1.ocp4-dc.virtus.corp   Ready    control-plane,master,worker   153d   v1.33.13   10.100.22.34   <none>        Red Hat Enterprise Linux CoreOS 9.6.20260825-0 (Plow)   5.14.0-570.135.1.el9_6.x86_64   cri-o://1.33.13-5.rhaos4.20.git7ebc848.el9
+master-2.ocp4-dc.virtus.corp   Ready    control-plane,master,worker   153d   v1.33.13   10.100.22.35   <none>        Red Hat Enterprise Linux CoreOS 9.6.20260825-0 (Plow)   5.14.0-570.135.1.el9_6.x86_64   cri-o://1.33.13-5.rhaos4.20.git7ebc848.el9
+master-3.ocp4-dc.virtus.corp   Ready    control-plane,master,worker   153d   v1.33.13   10.100.22.36   <none>        Red Hat Enterprise Linux CoreOS 9.6.20260825-0 (Plow)   5.14.0-570.135.1.el9_6.x86_64   cri-o://1.33.13-5.rhaos4.20.git7ebc848.el9
+
+$ oc get nodes --no-headers | awk '$2!="Ready"'
+[PASS] [CRITICAL] Node NotReady / SchedulingDisabled
+
+$ oc get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .status.conditions[?(@.status=="True")]}{.type}{" "}{end}{"\n"}{end}' | grep -E 'Pressure|NetworkUnavailable'
+[PASS] [HIGH] Node pressure (Memory/Disk/PID/Network)
+
+$ oc adm top nodes
+NAME                           CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)   
+master-1.ocp4-dc.virtus.corp   7388m        15%      116396Mi        45%         
+master-2.ocp4-dc.virtus.corp   6467m        13%      64595Mi         25%         
+master-3.ocp4-dc.virtus.corp   6175m        13%      90957Mi         71%         
+
+$ oc adm top nodes --no-headers | awk '{gsub("%",""); if ($3>=85||$5>=85) print}'
+[PASS] [MEDIUM] Node CPU / Memory >= 85%
+
+$ oc get mcp
+NAME         CONFIG                                                 UPDATED   UPDATING   DEGRADED   MACHINECOUNT   READYMACHINECOUNT   UPDATEDMACHINECOUNT   DEGRADEDMACHINECOUNT   AGE
+dev-worker   rendered-dev-worker-709b64c4c9425dda14767267dc5efafd   True      False      False      0              0                   0                     0                      147d
+master       rendered-master-9fc0a33d497cd8807509aa0b4fb6d88a       True      False      False      3              3                   3                     0                      153d
+worker       rendered-worker-06c867e0825a997f20a08ea67d831baf       True      False      False      0              0                   0                     0                      153d
+
+$ oc get mcp -o jsonpath='{range .items[*]}{.metadata.name}{" updated="}{.status.conditions[?(@.type=="Updated")].status}{" degraded="}{.status.conditions[?(@.type=="Degraded")].status}{" paused="}{.spec.paused}{"\n"}{end}' | grep -vE 'updated=True degraded=False paused=(false)?$'
+[PASS] [HIGH] MachineConfigPool Updating / Degraded / Paused
+
+==================== 04 Control Plane & etcd ====================
+
+$ oc -n openshift-etcd exec -c etcdctl pod/etcd-master-1.ocp4-dc.virtus.corp -- etcdctl endpoint status --cluster -w table
++---------------------------+------------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+|         ENDPOINT          |        ID        | VERSION | DB SIZE | IS LEADER | IS LEARNER | RAFT TERM | RAFT INDEX | RAFT APPLIED INDEX | ERRORS |
++---------------------------+------------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+| https://10.100.22.36:2379 | 1adf8132bda0a139 |  3.5.26 |  743 MB |     false |      false |       210 |  520120989 |          520120989 |        |
+| https://10.100.22.35:2379 | 33ed8978e7aa20dc |  3.5.26 |  743 MB |      true |      false |       210 |  520120989 |          520120989 |        |
+| https://10.100.22.34:2379 | 43a7c8cdb84749e4 |  3.5.26 |  743 MB |     false |      false |       210 |  520120989 |          520120989 |        |
++---------------------------+------------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+
+$ oc -n openshift-etcd exec -c etcdctl pod/etcd-master-1.ocp4-dc.virtus.corp -- etcdctl endpoint health --cluster 2>&1 | grep -v 'is healthy'
+[PASS] [CRITICAL] etcd member tidak healthy
+
+$ oc -n openshift-etcd exec -c etcdctl pod/etcd-master-1.ocp4-dc.virtus.corp -- etcdctl endpoint status --cluster -w json | python3 -c 'import json,sys;[print(e["Endpoint"],round(e["Status"]["dbSize"]/1e9,2),"GB") for e in json.load(sys.stdin) if e["Status"]["dbSize"]>=6e9]'
+[PASS] [MEDIUM] etcd DB size >= 6 GB (quota default 8 GB)
+
+$ for ns in openshift-etcd openshift-kube-apiserver openshift-kube-controller-manager openshift-kube-scheduler openshift-apiserver openshift-oauth-apiserver openshift-authentication; do oc get pods -n $ns --no-headers | grep -vE 'Running|Completed' | sed "s#^#$ns #"; done
+[PASS] [CRITICAL] Pod control plane tidak Running
+
+==================== 05 Sertifikat & CSR ====================
+
+$ oc get csr --no-headers 2>/dev/null | grep Pending
+[PASS] [MEDIUM] CSR Pending
+
+$ oc get secrets -A -o json | python3 -c '
+import json,sys,datetime
+now=datetime.datetime.now(datetime.timezone.utc)
+for s in json.load(sys.stdin)["items"]:
+  m=s["metadata"]; a=(m.get("annotations") or {}).get("auth.openshift.io/certificate-not-after")
+  if not a: continue
+  d=(datetime.datetime.fromisoformat(a.replace("Z","+00:00"))-now).days
+  if d<7 and not (m["namespace"]=="openshift-cnv" and m["name"].startswith("cdi-")) and not m["namespace"].startswith("clusters-"):
+    print(d, "hari", m["namespace"], m["name"])' | sort -n
+[PASS] [CRITICAL] Sertifikat platform expired < 7 hari (di luar yang auto-rotate harian)
+
+==================== 06 Workload ====================
+
+$ oc get pods -A --no-headers | awk '$4 ~ /CrashLoop|Error|ImagePull|ErrImage|Pending|OOM|Unknown|Evicted|ContainerCreating|Init:/'
+militech                                           anythingllm-ca-sync-29841317-8ngvr                                0/1   ImagePullBackOff   0                2d
+openshift-kube-descheduler-operator                descheduler-dryrun-logger-29836865-k4c2p                          0/1   ImagePullBackOff   0                5d2h
+redhat-ods-applications                            maas-api-key-cleanup-29844210-pnx76                               0/1   CrashLoopBackOff   1 (15s ago)      59s
+[FAIL] [MEDIUM] Pod bermasalah (CrashLoop/Error/ImagePull/Pending/OOM/Unknown) (3 baris)
+
+$ oc get pods -A --no-headers | awk '$5+0>20 {print $1,$2,$4,$5}'
+clusters-ocp-hosted cluster-policy-controller-68d4f79bbb-25j9k Running 21
+clusters-ocp-hosted csi-snapshot-controller-54998b88f8-t6lwq Running 21
+clusters-ocp-hosted openshift-controller-manager-b694885c7-cd6xm Running 21
+clusters-ocp-hosted openshift-route-controller-manager-6b9ddb4cfb-dzhnx Running 22
+openshift-kube-controller-manager kube-controller-manager-master-1.ocp4-dc.virtus.corp Running 31
+openshift-kube-controller-manager kube-controller-manager-master-2.ocp4-dc.virtus.corp Running 29
+openshift-kube-controller-manager kube-controller-manager-master-3.ocp4-dc.virtus.corp Running 35
+openshift-nfd nfd-controller-manager-855b877b68-kltfk Running 22
+truenas-csi truenas-csi-controller-665fcc695b-hddjc Running 43
+[FAIL] [LOW] Pod restart > 20 (9 baris)
+
+$ oc get jobs -A --no-headers | awk '$3 ~ /Failed/ {print $1,$2,$3}'
+openshift-storage rook-ceph-osd-prepare-0f4a94cb48d7c81d594705ce44effabf Failed
+redhat-ai-gateway-infra maas-api-key-cleanup-29837415 Failed
+redhat-ods-applications maas-api-key-cleanup-29844165 Failed
+redhat-ods-applications maas-api-key-cleanup-29844180 Failed
+redhat-ods-applications maas-api-key-cleanup-29844195 Failed
+[FAIL] [LOW] Job Failed (5 baris)
+
+$ oc get deploy -A --no-headers | awk '{split($3,a,"/"); if (a[1]!=a[2]) print}'
+[PASS] [MEDIUM] Deployment tidak full ready
+
+$ oc get sts -A --no-headers | awk '{split($3,a,"/"); if (a[1]!=a[2]) print}'
+[PASS] [HIGH] StatefulSet tidak full ready
+
+$ oc get ds -A --no-headers | awk '$3!=$5 || $3!=$7'
+[PASS] [HIGH] DaemonSet tidak full ready
+
+$ oc get pdb -A --no-headers | awk '$(NF-1)==0 {print $1,$2}' | grep -vE ' (noobaa-db-pg-cluster-primary|kubevirt-disruption-budget-.*)$'
+clusters-ocp-hosted etcd
+clusters-ocp-hosted kube-apiserver
+clusters-ocp-hosted oauth-openshift
+clusters-ocp-hosted openshift-apiserver
+clusters-ocp-hosted openshift-oauth-apiserver
+istio-poc istiod-poc
+istio-system istiod
+[FAIL] [MEDIUM] PDB ALLOWED DISRUPTIONS = 0 (memblok drain / upgrade) (7 baris)
+
+==================== 07 Networking & Ingress ====================
+
+$ oc get network.config cluster -o jsonpath='{.status.networkType}{"  clusterNetwork="}{.status.clusterNetwork[*].cidr}{"  serviceNetwork="}{.status.serviceNetwork}{"\n"}'
+OVNKubernetes  clusterNetwork=10.128.0.0/14  serviceNetwork=["172.30.0.0/16"]
+
+$ oc get pods -n openshift-ovn-kubernetes --no-headers | grep -v Running
+[PASS] [CRITICAL] Pod OVN-Kubernetes tidak Running
+
+$ oc get pods -n openshift-ingress --no-headers | grep -v Running; oc get pods -n openshift-dns --no-headers | grep -v Running
+[PASS] [CRITICAL] Pod router / DNS tidak Running
+
+$ oc get ingresscontroller -n openshift-ingress-operator -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.conditions[?(@.type=="Available")].status}{"\n"}{end}' | grep -v ' True'
+[PASS] [CRITICAL] IngressController tidak Available
+
+$ for u in https://console-openshift-console.apps.ocp4-dc.virtus.corp https://oauth-openshift.apps.ocp4-dc.virtus.corp/healthz $(oc whoami --show-server)/readyz; do c=$(curl -sk -o /dev/null -m 10 -w '%{http_code}' $u); [[ $c == 200 ]] || echo "$u -> HTTP $c"; done
+[PASS] [HIGH] Console / OAuth / API tidak merespons HTTP 200
+
+$ oc get nncp --no-headers 2>/dev/null | awk '$2!="Available"'
+[PASS] [HIGH] NodeNetworkConfigurationPolicy tidak Available
+
+$ oc get svc -A --no-headers | awk '$3=="LoadBalancer" && $5 ~ /pending|<none>/'
+openshift-storage                                  sts                                                            LoadBalancer   172.30.7.244     <pending>                              443:30936/TCP                                                                                                                        153d
+[FAIL] [LOW] Service LoadBalancer tanpa EXTERNAL-IP (1 baris)
+
+==================== 08 Storage ====================
+
+$ oc get pvc -A --no-headers | awk '$3!="Bound"'
+[PASS] [MEDIUM] PVC tidak Bound
+
+$ oc get volumeattachment -o jsonpath='{range .items[?(@.status.attachError)]}{.metadata.name}{" "}{.status.attachError.message}{"\n"}{end}'
+[PASS] [HIGH] VolumeAttachment error
+
+$ oc -n openshift-monitoring exec -c prometheus prometheus-k8s-0 -- curl -s --data-urlencode 'query=kubelet_volume_stats_used_bytes/kubelet_volume_stats_capacity_bytes > 0.8' http://localhost:9090/api/v1/query | python3 -c 'import json,sys;[print(r["metric"]["namespace"],r["metric"]["persistentvolumeclaim"],"%.0f%%"%(float(r["value"][1])*100)) for r in json.load(sys.stdin)["data"]["result"]]'
+[PASS] [HIGH] PV usage >= 80% (kubelet_volume_stats)
+
+$ oc exec -n openshift-storage deploy/rook-ceph-operator -- ceph -s --conf=/var/lib/rook/openshift-storage/openshift-storage.config --keyring=/var/lib/rook/openshift-storage/client.admin.keyring
+  cluster:
+    id:     2d089bd6-47b0-4fbc-ad1f-5f46e138c8eb
+    health: HEALTH_WARN
+            1 pool(s) have no replicas configured
+ 
+  services:
+    mon: 3 daemons, quorum d,g,h (age 5d)
+    mgr: a(active, since 6d), standbys: b
+    mds: 1/1 daemons up, 1 hot standby
+    osd: 3 osds: 3 up (since 6d), 3 in (since 6d)
+    rgw: 1 daemon active (1 hosts, 1 zones)
+ 
+  data:
+    volumes: 1/1 healthy
+    pools:   13 pools, 264 pgs
+    objects: 172.46k objects, 580 GiB
+    usage:   1.5 TiB used, 3.8 TiB / 5.2 TiB avail
+    pgs:     264 active+clean
+ 
+  io:
+    client:   657 KiB/s rd, 993 KiB/s wr, 18 op/s rd, 75 op/s wr
+ 
+
+$ oc exec -n openshift-storage deploy/rook-ceph-operator -- ceph df --conf=/var/lib/rook/openshift-storage/openshift-storage.config --keyring=/var/lib/rook/openshift-storage/client.admin.keyring
+--- RAW STORAGE ---
+CLASS     SIZE    AVAIL     USED  RAW USED  %RAW USED
+ssd    5.2 TiB  3.8 TiB  1.5 TiB   1.5 TiB      28.11
+TOTAL  5.2 TiB  3.8 TiB  1.5 TiB   1.5 TiB      28.11
+ 
+--- POOLS ---
+POOL                                                   ID  PGS   STORED  OBJECTS     USED  %USED  MAX AVAIL
+ocs-storagecluster-cephblockpool                        1   64  453 GiB  122.14k  1.3 TiB  30.27   1004 GiB
+ocs-storagecluster-cephobjectstore.rgw.control          2    8      0 B        8      0 B      0   1004 GiB
+.mgr                                                    3   32   10 MiB        4   31 MiB      0   1004 GiB
+ocs-storagecluster-cephobjectstore.rgw.meta             4    8  2.6 KiB       14  120 KiB      0   1004 GiB
+ocs-storagecluster-cephfilesystem-metadata              5   16  211 MiB    7.72k  634 MiB   0.02   1004 GiB
+ocs-storagecluster-cephobjectstore.rgw.log              6    8  474 KiB      373  3.6 MiB      0   1004 GiB
+ocs-storagecluster-cephfilesystem-data0                 7   32   28 GiB   13.25k   84 GiB   2.71   1004 GiB
+ocs-storagecluster-cephobjectstore.rgw.buckets.index    8    8    595 B       11  1.7 KiB      0   1004 GiB
+ocs-storagecluster-cephobjectstore.rgw.buckets.non-ec   9    8      0 B        0      0 B      0   1004 GiB
+ocs-storagecluster-cephobjectstore.rgw.otp             10    8      0 B        0      0 B      0   1004 GiB
+.rgw.root                                              11    8  6.3 KiB       16  180 KiB      0   1004 GiB
+ocs-storagecluster-cephobjectstore.rgw.buckets.data    12   32      0 B        0      0 B      0   1004 GiB
+replica1-pool                                          13   32  112 GiB   28.93k  112 GiB   3.57    2.9 TiB
+
+$ oc exec -n openshift-storage deploy/rook-ceph-operator -- ceph osd df tree --conf=/var/lib/rook/openshift-storage/openshift-storage.config --keyring=/var/lib/rook/openshift-storage/client.admin.keyring
+ID  CLASS  WEIGHT   REWEIGHT  SIZE     RAW USE  DATA     OMAP     META     AVAIL    %USE   VAR   PGS  STATUS  TYPE NAME                            
+-1         5.23878         -  5.2 TiB  1.5 TiB  1.5 TiB   12 MiB  5.1 GiB  3.8 TiB  28.11  1.00    -          root default                         
+-5         1.74609         -  1.7 TiB  495 GiB  493 GiB  4.1 MiB  1.6 GiB  1.3 TiB  27.67  0.98    -              host master-1-ocp4-dc-virtus-corp
+ 1    ssd  1.74609   1.00000  1.7 TiB  495 GiB  493 GiB  4.1 MiB  1.6 GiB  1.3 TiB  27.67  0.98  240      up          osd.1                        
+-3         1.74660         -  1.7 TiB  497 GiB  495 GiB  4.1 MiB  1.7 GiB  1.3 TiB  27.78  0.99    -              host master-2-ocp4-dc-virtus-corp
+ 0    ssd  1.74660   1.00000  1.7 TiB  497 GiB  495 GiB  4.1 MiB  1.7 GiB  1.3 TiB  27.78  0.99  241      up          osd.0                        
+-7         1.74609         -  1.7 TiB  516 GiB  515 GiB  4.1 MiB  1.8 GiB  1.2 TiB  28.88  1.03    -              host master-3-ocp4-dc-virtus-corp
+ 2    ssd  1.74609   1.00000  1.7 TiB  516 GiB  515 GiB  4.1 MiB  1.8 GiB  1.2 TiB  28.88  1.03  247      up          osd.2                        
+                       TOTAL  5.2 TiB  1.5 TiB  1.5 TiB   12 MiB  5.1 GiB  3.8 TiB  28.11                                                          
+MIN/MAX VAR: 0.98/1.03  STDDEV: 0.55
+
+$ oc exec -n openshift-storage deploy/rook-ceph-operator -- ceph health detail --conf=/var/lib/rook/openshift-storage/openshift-storage.config --keyring=/var/lib/rook/openshift-storage/client.admin.keyring | grep -A20 HEALTH_ERR
+[PASS] [CRITICAL] Ceph HEALTH_ERR
+
+$ oc exec -n openshift-storage deploy/rook-ceph-operator -- ceph health detail --conf=/var/lib/rook/openshift-storage/openshift-storage.config --keyring=/var/lib/rook/openshift-storage/client.admin.keyring | grep -A20 HEALTH_WARN
+HEALTH_WARN 1 pool(s) have no replicas configured
+[WRN] POOL_NO_REDUNDANCY: 1 pool(s) have no replicas configured
+    pool 'replica1-pool' has no replicas configured
+[FAIL] [MEDIUM] Ceph HEALTH_WARN (3 baris)
+
+$ oc exec -n openshift-storage deploy/rook-ceph-operator -- ceph osd df --conf=/var/lib/rook/openshift-storage/openshift-storage.config --keyring=/var/lib/rook/openshift-storage/client.admin.keyring -f json | python3 -c 'import json,sys;[print("osd.%d %.1f%%"%(n["id"],n["utilization"])) for n in json.load(sys.stdin)["nodes"] if n["utilization"]>=75]'
+[PASS] [HIGH] Ceph OSD usage >= 75% (nearfull default 85%)
+
+$ oc get pods -n openshift-storage --no-headers | grep -vE 'Running|Completed'
+[PASS] [HIGH] Pod ODF tidak Running
+
+$ oc get pv --no-headers -o custom-columns=N:.metadata.name,SC:.spec.storageClassName,NS:.spec.claimRef.namespace,PVC:.spec.claimRef.name | awk '$2=="ceph-rbd-replica1"'
+pvc-154b7036-b853-4e21-a4e8-7bf89bc6e1a0   ceph-rbd-replica1                            clusters-ocp-hosted                   ocp-hosted-2pcq7-qgxp8-rhcos
+pvc-3cbdaa99-b50e-427b-b7a4-2cf42c1bf9f3   ceph-rbd-replica1                            clusters-ocp-hosted                   ocp-hosted-2kkrf-rhcos
+pvc-4b132fd5-2202-4f19-a72f-9544c93fff13   ceph-rbd-replica1                            clusters-ocp-hosted                   ocp-hosted-v6cw2-rhcos
+pvc-617c4181-0a8a-46c0-a2bf-1f17c19dced0   ceph-rbd-replica1                            clusters-ocp-hosted                   ocp-hosted-s5njn-rhcos
+[FAIL] [HIGH] PV di pool TANPA replika (ceph-rbd-replica1) - risiko saat drain (4 baris)
+
+$ oc get sc
+NAME                                         PROVISIONER                             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+ceph-rbd-replica1                            openshift-storage.rbd.csi.ceph.com      Delete          Immediate              true                   10d
+huawei-dorado-block                          csi.huawei.com                          Delete          Immediate              true                   6d16h
+lvs-odf1                                     kubernetes.io/no-provisioner            Delete          WaitForFirstConsumer   false                  153d
+ocs-storagecluster-ceph-rbd (default)        openshift-storage.rbd.csi.ceph.com      Delete          Immediate              true                   153d
+ocs-storagecluster-ceph-rbd-virtualization   openshift-storage.rbd.csi.ceph.com      Delete          Immediate              true                   153d
+ocs-storagecluster-ceph-rgw                  openshift-storage.ceph.rook.io/bucket   Delete          Immediate              false                  96d
+ocs-storagecluster-cephfs                    openshift-storage.cephfs.csi.ceph.com   Delete          Immediate              true                   153d
+openshift-storage.noobaa.io                  openshift-storage.noobaa.io/obc         Delete          Immediate              false                  153d
+truenas-iscsi                                csi.truenas.io                          Delete          Immediate              true                   19d
+
+==================== 09 Virtualization ====================
+
+$ oc get hco -n openshift-cnv -o jsonpath='{range .items[0].status.conditions[*]}{.type}={.status}{"\n"}{end}' | grep -E '^(Available=False|Degraded=True)'
+[PASS] [CRITICAL] HyperConverged tidak Available / Degraded
+
+$ oc get pods -n openshift-cnv --no-headers | grep -vE 'Running|Completed'
+[PASS] [HIGH] Pod virt-* / CDI tidak Running
+
+$ oc get vm -A --no-headers | awk '{print $4}' | sort | uniq -c
+     18 Running
+     16 Stopped
+
+$ oc get vm -A --no-headers | awk '$4 !~ /^(Running|Stopped)$/'
+[PASS] [MEDIUM] VM Error / Unknown / Paused / Starting
+
+$ oc get vmi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{" "}{.status.conditions[?(@.type=="LiveMigratable")].status}{"\n"}{end}' | grep -v ' True'
+[PASS] [MEDIUM] VM Running tapi tidak LiveMigratable
+
+$ oc get vmim -A --no-headers 2>/dev/null | awk '$3=="Failed"'
+[PASS] [LOW] Live migration Failed
+
+==================== 10 Monitoring & Alert ====================
+
+$ oc -n openshift-monitoring exec -c alertmanager alertmanager-main-0 -- amtool --alertmanager.url=http://localhost:9093 alert query -o simple 'severity="critical"' | awk 'NR>1{print $1}' | sort | uniq -c | sort -rn
+[PASS] [HIGH] Alert firing severity=critical
+
+$ oc -n openshift-monitoring exec -c alertmanager alertmanager-main-0 -- amtool --alertmanager.url=http://localhost:9093 alert query -o simple 'severity="warning"' | awk 'NR>1{print $1}' | sort | uniq -c | sort -rn
+      7 PodDisruptionBudgetAtLimit
+      3 SystemMemoryExceedsReservation
+      3 IngressWithoutClassName
+      1 TargetDown
+      1 PrometheusOperatorRejectedResources
+      1 PersistentVolumeUsageNearFull
+      1 KubeJobNotCompleted
+      1 KubeJobFailed
+      1 CephClusterWarningState
+      1 AlertmanagerReceiversNotConfigured
+[FAIL] [LOW] Alert firing severity=warning (10 baris)
+
+$ oc get pods -n openshift-monitoring --no-headers | grep -v Running
+[PASS] [MEDIUM] Pod monitoring tidak Running
+
+==================== 11 Operators (OLM) ====================
+
+$ oc get csv -A --no-headers 2>/dev/null | awk '$NF!="Succeeded"' | sort -u -k2,2
+[PASS] [HIGH] CSV tidak Succeeded
+
+$ oc get catalogsource -A -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.connectionState.lastObservedState}{"\n"}{end}' | grep -v ' READY'
+[PASS] [LOW] CatalogSource tidak READY
+
+$ oc get installplan -A --no-headers 2>/dev/null | awk '$5=="false" {print $1,$3}'
+cert-manager-operator cert-manager-operator.v1.20.0
+costmanagement-metrics-operator costmanagement-metrics-operator.4.4.2
+metallb-system metallb-operator.v4.20.0-202608040713
+openshift-cnv kubevirt-hyperconverged-operator.v4.20.27
+openshift-jobset-operator jobset-operator.v1.0.1
+openshift-lightspeed lightspeed-operator.v1.1.2
+openshift-local-storage local-storage-operator.v4.20.0-202605070645
+openshift-lws-operator leader-worker-set.v1.0.1
+openshift-mtv mtv-operator.v2.11.5
+openshift-netobserv-operator network-observability-operator.v1.12.2
+openshift-nfd nfd.4.20.0-202608040713
+openshift-nmstate kubernetes-nmstate-operator.4.20.0-202604271547
+openshift-operators kiali-operator.v2.27.4
+openshift-operators openshift-pipelines-operator-rh.v1.24.0
+openshift-operators portworx-operator.v26.3.2
+openshift-operators servicemeshoperator3.v3.4.2
+openshift-storage recipe.v4.20.10-rhodf
+[FAIL] [LOW] InstallPlan menunggu approval (update operator tersedia) (17 baris)
+
+==================== 12 Backup ====================
+
+$ oc get backup.velero.io -n openshift-adp --sort-by=.metadata.creationTimestamp -o custom-columns=NAME:.metadata.name,PHASE:.status.phase,DONE:.status.completionTimestamp 2>/dev/null | tail -5
+NAME   PHASE   DONE
+
+$ oc get backupstoragelocation -n openshift-adp --no-headers 2>/dev/null | awk '$2!="Available"'
+[PASS] [HIGH] BackupStorageLocation tidak Available
+
+$ oc get backup.velero.io -n openshift-adp --sort-by=.metadata.creationTimestamp -o custom-columns=N:.metadata.name,P:.status.phase --no-headers 2>/dev/null | tail -1 | grep -v Completed
+[PASS] [HIGH] Backup OADP terakhir tidak Completed
+
+$ oc get backup.velero.io -n openshift-adp -o jsonpath='{range .items[?(@.status.phase=="Completed")]}{.status.completionTimestamp}{"\n"}{end}' | awk -v t="$(date -u -d '-7 day' +%FT%TZ)" '$1>=t' | grep -q . || echo 'tidak ada backup Completed >= '$(date -d '-7 day' +%F)
+tidak ada backup Completed >= 2026-09-22
+[FAIL] [MEDIUM] Tidak ada backup OADP Completed dalam 7 hari (1 baris)
+
+==================== 13 Events Warning (1 jam terakhir, top 20 reason) ====================
+
+$ oc get events -A --field-selector type=Warning -o jsonpath='{range .items[*]}{.lastTimestamp}{" "}{.reason}{"\n"}{end}' | awk -v t="$(date -u -d '-1 hour' +%FT%TZ)" '$1>=t {print $2}' | sort | uniq -c | sort -rn | head -20
+      7 BackOff
+      5 InvalidConfiguration
+      3 Failed
+      3 BackoffLimitExceeded
+      1 VolumeFailedDelete
+      1 Unhealthy
+      1 TooManyMissedTimes
+      1 FailedDelete
+      1 DeadlineExceeded
+      1 BuildConfigInstantiateFailed
+
+==================== RINGKASAN & SKOR ====================
+Temuan (FAIL) diurutkan berdasarkan severity:
+  [HIGH    ] 08 Storage               PV di pool TANPA replika (ceph-rbd-replica1) - risiko saat drain
+  [MEDIUM  ] 06 Workload              Pod bermasalah (CrashLoop/Error/ImagePull/Pending/OOM/Unknown)
+  [MEDIUM  ] 06 Workload              PDB ALLOWED DISRUPTIONS = 0 (memblok drain / upgrade)
+  [MEDIUM  ] 08 Storage               Ceph HEALTH_WARN
+  [MEDIUM  ] 12 Backup                Tidak ada backup OADP Completed dalam 7 hari
+  [LOW     ] 06 Workload              Pod restart > 20
+  [LOW     ] 06 Workload              Job Failed
+  [LOW     ] 07 Networking & Ingress  Service LoadBalancer tanpa EXTERNAL-IP
+  [LOW     ] 10 Monitoring & Alert    Alert firing severity=warning
+  [LOW     ] 11 Operators (OLM)       InstallPlan menunggu approval (update operator tersedia)
+
+Skor per area:
+  01 Cluster Version       100/100
+  02 ClusterOperators      100/100
+  03 Nodes & MCP           100/100
+  04 Control Plane & etcd  100/100
+  05 Sertifikat & CSR      100/100
+  06 Workload               62/100
+  07 Networking & Ingress   98/100
+  08 Storage                80/100
+  09 Virtualization        100/100
+  10 Monitoring & Alert     89/100
+  11 Operators (OLM)        86/100
+  12 Backup                 77/100
+
+Cek total   : 46 (PASS 36, FAIL 10)
+FAIL        : CRITICAL 0, HIGH 1, MEDIUM 4, LOW 5
+SKOR TOTAL  : 91/100
+STATUS      : KUNING - PERLU PERHATIAN (jadwalkan perbaikan)

@@ -1,0 +1,47 @@
+result,severity,area,check,lines
+PASS,CRITICAL,"01 Cluster Version","ClusterVersion Failing / update macet",0
+PASS,CRITICAL,"02 ClusterOperators","ClusterOperator tidak Available / Degraded / Progressing",0
+PASS,CRITICAL,"03 Nodes & MCP","Node NotReady / SchedulingDisabled",0
+PASS,HIGH,"03 Nodes & MCP","Node pressure (Memory/Disk/PID/Network)",0
+PASS,MEDIUM,"03 Nodes & MCP","Node CPU / Memory >= 85%",0
+PASS,HIGH,"03 Nodes & MCP","MachineConfigPool Updating / Degraded / Paused",0
+PASS,CRITICAL,"04 Control Plane & etcd","etcd member tidak healthy",0
+PASS,MEDIUM,"04 Control Plane & etcd","etcd DB size >= 6 GB (quota default 8 GB)",0
+PASS,CRITICAL,"04 Control Plane & etcd","Pod control plane tidak Running",0
+PASS,MEDIUM,"05 Sertifikat & CSR","CSR Pending",0
+PASS,CRITICAL,"05 Sertifikat & CSR","Sertifikat platform expired < 7 hari (di luar yang auto-rotate harian)",0
+FAIL,MEDIUM,"06 Workload","Pod bermasalah (CrashLoop/Error/ImagePull/Pending/OOM/Unknown)",3
+FAIL,LOW,"06 Workload","Pod restart > 20",9
+FAIL,LOW,"06 Workload","Job Failed",5
+PASS,MEDIUM,"06 Workload","Deployment tidak full ready",0
+PASS,HIGH,"06 Workload","StatefulSet tidak full ready",0
+PASS,HIGH,"06 Workload","DaemonSet tidak full ready",0
+FAIL,MEDIUM,"06 Workload","PDB ALLOWED DISRUPTIONS = 0 (memblok drain / upgrade)",7
+PASS,CRITICAL,"07 Networking & Ingress","Pod OVN-Kubernetes tidak Running",0
+PASS,CRITICAL,"07 Networking & Ingress","Pod router / DNS tidak Running",0
+PASS,CRITICAL,"07 Networking & Ingress","IngressController tidak Available",0
+PASS,HIGH,"07 Networking & Ingress","Console / OAuth / API tidak merespons HTTP 200",0
+PASS,HIGH,"07 Networking & Ingress","NodeNetworkConfigurationPolicy tidak Available",0
+FAIL,LOW,"07 Networking & Ingress","Service LoadBalancer tanpa EXTERNAL-IP",1
+PASS,MEDIUM,"08 Storage","PVC tidak Bound",0
+PASS,HIGH,"08 Storage","VolumeAttachment error",0
+PASS,HIGH,"08 Storage","PV usage >= 80% (kubelet_volume_stats)",0
+PASS,CRITICAL,"08 Storage","Ceph HEALTH_ERR",0
+FAIL,MEDIUM,"08 Storage","Ceph HEALTH_WARN",3
+PASS,HIGH,"08 Storage","Ceph OSD usage >= 75% (nearfull default 85%)",0
+PASS,HIGH,"08 Storage","Pod ODF tidak Running",0
+FAIL,HIGH,"08 Storage","PV di pool TANPA replika (ceph-rbd-replica1) - risiko saat drain",4
+PASS,CRITICAL,"09 Virtualization","HyperConverged tidak Available / Degraded",0
+PASS,HIGH,"09 Virtualization","Pod virt-* / CDI tidak Running",0
+PASS,MEDIUM,"09 Virtualization","VM Error / Unknown / Paused / Starting",0
+PASS,MEDIUM,"09 Virtualization","VM Running tapi tidak LiveMigratable",0
+PASS,LOW,"09 Virtualization","Live migration Failed",0
+PASS,HIGH,"10 Monitoring & Alert","Alert firing severity=critical",0
+FAIL,LOW,"10 Monitoring & Alert","Alert firing severity=warning",10
+PASS,MEDIUM,"10 Monitoring & Alert","Pod monitoring tidak Running",0
+PASS,HIGH,"11 Operators (OLM)","CSV tidak Succeeded",0
+PASS,LOW,"11 Operators (OLM)","CatalogSource tidak READY",0
+FAIL,LOW,"11 Operators (OLM)","InstallPlan menunggu approval (update operator tersedia)",17
+PASS,HIGH,"12 Backup","BackupStorageLocation tidak Available",0
+PASS,HIGH,"12 Backup","Backup OADP terakhir tidak Completed",0
+FAIL,MEDIUM,"12 Backup","Tidak ada backup OADP Completed dalam 7 hari",1
